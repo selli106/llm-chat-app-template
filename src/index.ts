@@ -28,7 +28,7 @@ Return the output as a JSON array of event objects only, no extra explanation or
 If no events are found, return an empty JSON array: []
 `;
 
-// Your fixed attendees list for .ics
+// Fixed attendees list (all optional)
 const ATTENDEES = [
   { name: "Storm Ellis", email: "storm.ellis@hutchins.tas.edu.au" },
 ];
@@ -42,6 +42,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
+      // Serve static assets or fallback
       return env.ASSETS.fetch(request);
     }
 
@@ -49,7 +50,6 @@ export default {
       if (request.method === "POST") {
         return handleChatRequest(request, env);
       }
-
       return new Response("Method not allowed", { status: 405 });
     }
 
@@ -64,16 +64,13 @@ export default {
     try {
       const rawBody = await streamToString(message.raw);
 
-      // Combine SYSTEM_PROMPT and email text for LLM input
+      // Compose prompt for AI extraction
       const prompt = `${SYSTEM_PROMPT}\n\nEmail text:\n${rawBody}`;
 
-      const aiResponse = await env.AI.run(MODEL_ID, {
-        prompt,
-      });
-
+      // Call AI model to extract events
+      const aiResponse = await env.AI.run(MODEL_ID, { prompt });
       const aiJson = await aiResponse.text();
 
-      // Try parsing JSON from the AI's response
       let events;
       try {
         events = JSON.parse(aiJson);
@@ -87,10 +84,10 @@ export default {
         return;
       }
 
-      // Generate ICS content for all events
+      // Generate ICS content from extracted events
       const icsContent = generateICS(events);
 
-      // Send the .ics file as an email attachment to storm.ellis@hutchins.tas.edu.au
+      // Send email with ICS file attached
       await sendEmailWithICS(env, {
         to: "storm.ellis@hutchins.tas.edu.au",
         subject: "Extracted AV Events from Email - Calendar Invites",
@@ -103,41 +100,205 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
+
+// --- Helpers ---
+
 async function streamToString(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    if (value) chunks.push(value);
   }
-  // concatenate all chunks into a single Uint8Array
+  // Concatenate all chunks
   let length = 0;
-  for (const chunk of chunks) {
-    length += chunk.length;
-  }
+  for (const chunk of chunks) length += chunk.length;
   const result = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) {
     result.set(chunk, offset);
     offset += chunk.length;
   }
-  // decode Uint8Array to string
   return new TextDecoder().decode(result);
 }
 
-// Placeholder: Implement your generateICS function here
-function generateICS(events: any[]): string {
-  // Your existing generateICS implementation
-  return "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR"; // dummy placeholder
+function escapeICSText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
 }
 
-// Placeholder: Implement your sendEmailWithICS function here
+// Generate a unique ID for the UID field
+function generateUID(): string {
+  return `${crypto.randomUUID()}@hutchins.tas.edu.au`;
+}
+
+function formatDateTimeToICS(dateString: string): string {
+  // Convert ISO date string to UTC format: YYYYMMDDTHHmmssZ
+  const date = new Date(dateString);
+  const pad = (num: number) => num.toString().padStart(2, "0");
+  return (
+    date.getUTCFullYear().toString() +
+    pad(date.getUTCMonth() + 1) +
+    pad(date.getUTCDate()) +
+    "T" +
+    pad(date.getUTCHours()) +
+    pad(date.getUTCMinutes()) +
+    pad(date.getUTCSeconds()) +
+    "Z"
+  );
+}
+
+function generateICS(events: any[]): string {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Hutchins LLM Chat Worker//EN",
+    "CALSCALE:GREGORIAN",
+    // Per your instructions, do NOT include METHOD here (some calendars prefer no METHOD)
+    // "METHOD:PUBLISH",
+  ];
+
+  for (const event of events) {
+    const uid = generateUID();
+
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${uid}`);
+    lines.push(`DTSTAMP:${formatDateTimeToICS(new Date().toISOString())}`);
+
+    if (event.start) lines.push(`DTSTART:${formatDateTimeToICS(event.start)}`);
+    if (event.end) lines.push(`DTEND:${formatDateTimeToICS(event.end)}`);
+
+    if (event.location) {
+      lines.push(`LOCATION:${escapeICSText(event.location)}`);
+    } else {
+      lines.push(`LOCATION:`);
+    }
+
+    // Build description from requested fields, some might be missing
+    const descriptionParts = [
+      `AV Support request location: ${event["AV Support request location:"] || ""}`,
+      `AV Support requirements: ${event["AV Support requirements:"] || ""}`,
+      `Brief description: ${event["Brief description:"] || ""}`,
+      `Other: ${event["Other:"] || ""}`,
+      `Description: ${event.description || ""}`,
+    ];
+
+    const description = escapeICSText(descriptionParts.join("\n"));
+    lines.push(`DESCRIPTION:${description}`);
+
+    lines.push(`SUMMARY:${escapeICSText(event.title || "No Title")}`);
+
+    // Attendees - all optional participants, combine event attendees + fixed attendees
+    const attendeesSet = new Map<string, string>(); // email -> name
+
+    if (Array.isArray(event.attendees)) {
+      for (const att of event.attendees) {
+        if (att.email && att.name) {
+          attendeesSet.set(att.email, att.name);
+        }
+      }
+    }
+    // Add fixed attendees (optional)
+    for (const att of ATTENDEES) {
+      attendeesSet.set(att.email, att.name);
+    }
+
+    for (const [email, name] of attendeesSet.entries()) {
+      lines.push(
+        `ATTENDEE;CN=${escapeICSText(name)};RSVP=FALSE;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL:mailto:${email}`,
+      );
+    }
+
+    // Reminder 30 minutes before event
+    lines.push("BEGIN:VALARM");
+    lines.push("TRIGGER:-PT30M");
+    lines.push("DESCRIPTION:Reminder");
+    lines.push("ACTION:DISPLAY");
+    lines.push("END:VALARM");
+
+    lines.push("END:VEVENT");
+  }
+
+  lines.push("END:VCALENDAR");
+
+  return lines.join("\r\n");
+}
+
 async function sendEmailWithICS(env: Env, options: {
   to: string;
   subject: string;
   body: string;
   ics: string;
 }): Promise<void> {
-  // Your existing email sending implementation
+  if (!env.MAIL || !env.MAIL.send) {
+    console.error("Email binding MAIL or send method is not configured.");
+    return;
+  }
+
+  const boundary = `----boundary_${crypto.randomUUID()}`;
+  const message = [
+    `To: ${options.to}`,
+    `Subject: ${options.subject}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    options.body,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/calendar; method=PUBLISH; charset="UTF-8"',
+    'Content-Transfer-Encoding: 7bit',
+    'Content-Disposition: attachment; filename="invite.ics"',
+    "",
+    options.ics,
+    "",
+    `--${boundary}--`,
+  ].join("\r\n");
+
+  try {
+    await env.MAIL.send({
+      to: options.to,
+      subject: options.subject,
+      raw: message,
+    });
+  } catch (e) {
+    console.error("❌ Failed to send email with ICS:", e);
+  }
+}
+
+// Stub for chat request handler - can be extended or replaced as needed
+async function handleChatRequest(request: Request, env: Env): Promise<Response> {
+  try {
+    const json = await request.json();
+    const messages: ChatMessage[] = json.messages || [];
+
+    // Compose prompt with system + user messages for AI
+    const promptMessages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...messages,
+    ];
+
+    // For simplicity, flatten messages to text prompt (or adapt to model API)
+    // This depends on your AI API contract, here assumed raw prompt string
+    const combinedPrompt = promptMessages
+      .map((m) => (m.role === "system" ? `[System]: ${m.content}` : `[User]: ${m.content}`))
+      .join("\n");
+
+    const aiResponse = await env.AI.run(MODEL_ID, { prompt: combinedPrompt });
+    const text = await aiResponse.text();
+
+    return new Response(text, {
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("❌ Error in chat handler:", e);
+    return new Response("Internal Server Error", { status: 500 });
+  }
 }
