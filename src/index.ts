@@ -35,17 +35,50 @@ export default {
 
     // API Routes
     if (url.pathname === "/api/chat") {
-      // Handle POST requests for chat
       if (request.method === "POST") {
         return handleChatRequest(request, env);
       }
 
-      // Method not allowed for other request types
       return new Response("Method not allowed", { status: 405 });
     }
 
-    // Handle 404 for unmatched routes
     return new Response("Not found", { status: 404 });
+  },
+
+  /**
+   * Email handler for processing forwarded emails to sched@streamlink.stream
+   */
+  async email(
+    message: ForwardableEmailMessage,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    try {
+      const rawBody = await message.raw; // Use message.headers["text/plain"] for just the plain text
+
+      const prompt = `Extract all tasks, bookings, setup times, and AV support needs from this email:\n\n${rawBody}`;
+
+      const aiResponse = await env.AI.run(MODEL_ID, {
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant extracting structured task data from AV-related emails.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        max_tokens: 1024,
+      });
+
+      const result = await aiResponse.json();
+      console.log("📬 Parsed Email Output:", result);
+
+      // Optionally, send to webhook, store in KV, or send summary email here.
+    } catch (err) {
+      console.error("❌ Failed to process email:", err);
+    }
   },
 } satisfies ExportedHandler<Env>;
 
@@ -57,12 +90,10 @@ async function handleChatRequest(
   env: Env,
 ): Promise<Response> {
   try {
-    // Parse JSON request body
     const { messages = [] } = (await request.json()) as {
       messages: ChatMessage[];
     };
 
-    // Add system prompt if not present
     if (!messages.some((msg) => msg.role === "system")) {
       messages.unshift({ role: "system", content: SYSTEM_PROMPT });
     }
@@ -75,16 +106,9 @@ async function handleChatRequest(
       },
       {
         returnRawResponse: true,
-        // Uncomment to use AI Gateway
-        // gateway: {
-        //   id: "YOUR_GATEWAY_ID", // Replace with your AI Gateway ID
-        //   skipCache: false,      // Set to true to bypass cache
-        //   cacheTtl: 3600,        // Cache time-to-live in seconds
-        // },
       },
     );
 
-    // Return streaming response
     return response;
   } catch (error) {
     console.error("Error processing chat request:", error);
