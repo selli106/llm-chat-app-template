@@ -1,26 +1,16 @@
 /**
  * LLM Chat Application Template
- *
- * A simple chat application using Cloudflare Workers AI.
- * This template demonstrates how to implement an LLM-powered chat interface with
- * streaming responses using Server-Sent Events (SSE).
+ * Enhanced with email parsing for task extraction.
  *
  * @license MIT
  */
-import { Env, ChatMessage } from "./types";
+import { Env, ChatMessage, ForwardableEmailMessage } from "./types";
 
-// Model ID for Workers AI model
-// https://developers.cloudflare.com/workers-ai/models/
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-
-// Default system prompt
 const SYSTEM_PROMPT =
   "You are a helpful, friendly assistant. Provide concise and accurate responses.";
 
 export default {
-  /**
-   * Main request handler for the Worker
-   */
   async fetch(
     request: Request,
     env: Env,
@@ -28,12 +18,10 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // Handle static assets (frontend)
     if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
       return env.ASSETS.fetch(request);
     }
 
-    // API Routes
     if (url.pathname === "/api/chat") {
       if (request.method === "POST") {
         return handleChatRequest(request, env);
@@ -45,16 +33,13 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 
-  /**
-   * Email handler for processing forwarded emails to sched@streamlink.stream
-   */
   async email(
     message: ForwardableEmailMessage,
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
     try {
-      const rawBody = await message.raw; // Use message.headers["text/plain"] for just the plain text
+      const rawBody = await streamToString(message.raw);
 
       const prompt = `Extract all tasks, bookings, setup times, and AV support needs from this email:\n\n${rawBody}`;
 
@@ -62,7 +47,8 @@ export default {
         messages: [
           {
             role: "system",
-            content: "You are a helpful assistant extracting structured task data from AV-related emails.",
+            content:
+              "You are a helpful assistant extracting structured task data from AV-related emails.",
           },
           {
             role: "user",
@@ -75,16 +61,13 @@ export default {
       const result = await aiResponse.json();
       console.log("📬 Parsed Email Output:", result);
 
-      // Optionally, send to webhook, store in KV, or send summary email here.
+      // Optional: send to webhook, KV, or re-email
     } catch (err) {
       console.error("❌ Failed to process email:", err);
     }
   },
 } satisfies ExportedHandler<Env>;
 
-/**
- * Handles chat API requests
- */
 async function handleChatRequest(
   request: Request,
   env: Env,
@@ -120,4 +103,18 @@ async function handleChatRequest(
       },
     );
   }
+}
+
+// Helper: Convert ReadableStream to string
+async function streamToString(stream: ReadableStream): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let result = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    result += decoder.decode(value, { stream: true });
+  }
+  result += decoder.decode();
+  return result;
 }
