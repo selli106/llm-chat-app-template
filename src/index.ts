@@ -7,8 +7,26 @@
 import { Env, ChatMessage, ForwardableEmailMessage } from "./types";
 
 const MODEL_ID = "@cf/mistral/mistral-small-3.1-24b-instruct";
-const SYSTEM_PROMPT =
-  "You are a helpful, friendly assistant. Provide concise and accurate responses.";
+const SYSTEM_PROMPT = `
+You are an AI assistant specialized in extracting event details from emails for calendar scheduling.
+
+From the given email text, identify all tasks, bookings, setup times, and AV support requirements. For each event found, provide a JSON object with these fields:
+
+- title: concise event title
+- start: ISO 8601 datetime string for event start
+- end: ISO 8601 datetime string for event end
+- location: event location (optional)
+- description: detailed description of the event
+- AV Support request location: string specifying where AV support is needed
+- AV Support requirements: string listing required AV equipment or setup
+- Brief description: short summary of the event
+- Other: any additional notes or information
+- attendees: array of objects with 'name' and 'email' for participants (optional)
+
+Return the output as a JSON array of event objects only, no extra explanation or text.
+
+If no events are found, return an empty JSON array: []
+`;
 
 // Your fixed attendees list for .ics
 const ATTENDEES = [
@@ -46,42 +64,8 @@ export default {
     try {
       const rawBody = await streamToString(message.raw);
 
-      // Prompt LLM to extract structured events/tasks from email
-      const prompt = `Extract all tasks, bookings, setup times, and AV support needs from this email. 
-Format your response as a JSON array of events. Each event must have:
-- title (string)
-- start (ISO datetime string)
-- end (ISO datetime string)
-- location (string, optional)
-- description (string)
-- AV Support request location: (string)
-- AV Support requirements: (string)
-- Brief description: (string)
-- Other: (string)
-- attendees: array of {name, email} (optional)
-
-Example:
-[
-  {
-    "title": "Soundcheck for students",
-    "start": "2025-06-30T08:00:00+10:00",
-    "end": "2025-06-30T12:00:00+10:00",
-    "location": "Auditorium",
-    "description": "Soundcheck session for mid year performances.",
-    "AV Support request location:": "Auditorium",
-    "AV Support requirements:": "Lectern microphone, stage lighting",
-    "Brief description:": "Soundcheck for students",
-    "Other:": "",
-    "attendees": [
-      {"name": "Matt Magnus", "email": "mmg@hutchins.tas.edu.au"}
-    ]
-  }
-]
-
-Now extract from this email text:
-
-${rawBody}
-`;
+      // Combine SYSTEM_PROMPT and email text for LLM input
+      const prompt = `${SYSTEM_PROMPT}\n\nEmail text:\n${rawBody}`;
 
       const aiResponse = await env.AI.run(MODEL_ID, {
         prompt,
@@ -142,5 +126,18 @@ async function streamToString(stream: ReadableStream<Uint8Array>): Promise<strin
   return new TextDecoder().decode(result);
 }
 
+// Placeholder: Implement your generateICS function here
+function generateICS(events: any[]): string {
+  // Your existing generateICS implementation
+  return "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR"; // dummy placeholder
+}
 
-// ... (rest of the unchanged helper functions remain the same)
+// Placeholder: Implement your sendEmailWithICS function here
+async function sendEmailWithICS(env: Env, options: {
+  to: string;
+  subject: string;
+  body: string;
+  ics: string;
+}): Promise<void> {
+  // Your existing email sending implementation
+}
