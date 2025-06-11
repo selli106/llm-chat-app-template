@@ -26,5 +26,15 @@
       "custom_address": "sched@streamlink.stream"
     }
   },
+  "bindings": [
+    {
+      "type": "email",
+      "name": "MAIL",
+      "email_address": "sched@streamlink.stream"
+    }
+  ],
+  "vars": {
+    "EMAIL_TO": "storm.ellis@hutchins.tas.edu.au"
+  },
   "upload_source_maps": true
 }
