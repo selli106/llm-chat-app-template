@@ -1,5 +1,5 @@
 /**
- * Type definitions for the LLM chat application.
+ * Type definitions for the LLM chat and email processing application.
  */
 
 export interface Env {
@@ -23,15 +23,16 @@ export interface ChatMessage {
 }
 
 /**
- * Represents an email received by the email() event handler.
+ * Represents an email message that can be forwarded to a Worker.
  */
 export interface ForwardableEmailMessage {
-  raw: ReadableStream; // The raw MIME message as a stream
-  headers: Record<string, string>; // Lowercase header keys and values
-  from: string;
-  to: string[];
-  cc?: string[];
-  bcc?: string[];
-  subject: string;
-  date: string;
+  /**
+   * Raw email body stream (RFC 822 format).
+   */
+  raw: ReadableStream;
+
+  /**
+   * Simplified email headers.
+   */
+  headers: Record<string, string>;
 }
