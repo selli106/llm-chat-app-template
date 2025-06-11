@@ -119,4 +119,28 @@ ${rawBody}
   },
 } satisfies ExportedHandler<Env>;
 
+async function streamToString(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  // concatenate all chunks into a single Uint8Array
+  let length = 0;
+  for (const chunk of chunks) {
+    length += chunk.length;
+  }
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  // decode Uint8Array to string
+  return new TextDecoder().decode(result);
+}
+
+
 // ... (rest of the unchanged helper functions remain the same)
