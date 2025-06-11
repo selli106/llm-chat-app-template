@@ -7,7 +7,10 @@
   "name": "llm-chat-app-template",
   "main": "src/index.ts",
   "compatibility_date": "2025-04-01",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
   "assets": {
     "binding": "ASSETS",
     "directory": "./public"
@@ -19,7 +22,9 @@
     "binding": "AI"
   },
   "triggers": {
-    "email": ["sched@streamlink.stream"]
+    "email": {
+      "custom_address": "sched@streamlink.stream"
+    }
   },
   "upload_source_maps": true
 }
