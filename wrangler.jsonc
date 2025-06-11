@@ -4,9 +4,9 @@
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "llm-chat-app-template",
+  "name": "your-worker-name",
   "main": "src/index.ts",
-  "compatibility_date": "2025-04-01",
+  "compatibility_date": "2024-06-12",
   "compatibility_flags": [
     "nodejs_compat",
     "global_fetch_strictly_public"
@@ -22,9 +22,7 @@
     "binding": "AI"
   },
   "triggers": {
-    "email": {
-      "custom_address": "sched@streamlink.stream"
-    }
+    "email": true
   },
   "bindings": [
     {
