@@ -6,7 +6,7 @@
  */
 import { Env, ChatMessage, ForwardableEmailMessage } from "./types";
 
-const MODEL_ID = "@cf/mistral/mistral-small-3.1-24b-instruct";
+const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const SYSTEM_PROMPT = `
 You are an AI assistant specialized in extracting event details from emails for calendar scheduling.
 
